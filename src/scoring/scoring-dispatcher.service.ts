@@ -42,12 +42,13 @@ export class ScoringDispatcherService {
     participantId: string,
     githubUrl: string,
   ): Promise<void> {
+    const jobId = `scoring-${participantId}`;
     try {
       await this.queue!.add(
         'run',
         { participantId, githubUrl },
         {
-          jobId: `scoring:${participantId}:${Date.now()}`,
+          jobId,
           attempts: Number(this.config.get('SCORING_JOB_ATTEMPTS', 3)),
           backoff: {
             type: 'exponential',
@@ -62,8 +63,17 @@ export class ScoringDispatcherService {
         },
       );
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        /job id already exists|duplicate job id|already exists/i.test(msg)
+      ) {
+        this.logger.debug(
+          `Scoring job already queued for participant ${participantId}`,
+        );
+        return;
+      }
       this.logger.warn(
-        `Queue add failed (${err instanceof Error ? err.message : err}), falling back to inline scoring`,
+        `Queue add failed (${msg}), falling back to inline scoring`,
       );
       void this.pipeline.run(participantId, githubUrl).catch((e) =>
         this.logger.error(e),

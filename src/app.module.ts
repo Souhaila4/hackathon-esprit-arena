@@ -44,6 +44,18 @@ import * as path from 'path';
                 : `submit:ip:${(req.ip as string) || 'unknown'}`;
             },
           },
+          {
+            name: 'checkpoint',
+            ttl: Number(config.get('RATE_LIMIT_CHECKPOINT_TTL_MS', 60_000)),
+            limit: Number(config.get('RATE_LIMIT_CHECKPOINT_LIMIT', 40)),
+            getTracker: (req: Record<string, unknown>) => {
+              const u = req.user as { id?: string } | undefined;
+              const id = u?.id;
+              return id
+                ? `checkpoint:user:${id}`
+                : `checkpoint:ip:${(req.ip as string) || 'unknown'}`;
+            },
+          },
         ],
       }),
     }),

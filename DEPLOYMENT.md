@@ -8,6 +8,7 @@
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Connexion Redis pour BullMQ + Bull Board (`/queues`). |
 | `SCORING_WORKER_CONCURRENCY` | Nombre de jobs de scoring traités en parallèle (défaut `2`). |
 | `RATE_LIMIT_SUBMIT_LIMIT`, `RATE_LIMIT_SUBMIT_TTL_MS` | Limite **par utilisateur** (JWT `id`) sur `POST /competitions/:id/submit` (défaut 8 req / 60 s). |
+| `RATE_LIMIT_CHECKPOINT_LIMIT`, `RATE_LIMIT_CHECKPOINT_TTL_MS` | Limite **par utilisateur** sur `PATCH .../checkpoints/:checkpointId/submit` (défaut 40 req / 60 s). |
 | `DATABASE_URL` | MongoDB : ajouter `maxPoolSize` dans l’URL si besoin, ex. `mongodb+srv://.../?retryWrites=true&w=majority&maxPoolSize=20`. |
 | `GITHUB_HTTP_TIMEOUT_MS`, `GROQ_HTTP_TIMEOUT_MS` | Timeouts HTTP côté agents. |
 | `HUGGINGFACE_CB_*` | Paramètres du **circuit breaker** Hugging Face (anti-cheat). |
@@ -43,3 +44,8 @@ server {
 ## Pool Prisma (MongoDB)
 
 Augmenter `maxPoolSize` dans `DATABASE_URL` selon la charge (et la taille du cluster MongoDB). Éviter de surdimensionner : chaque instance API ouvre son propre pool.
+
+## Soumissions concurrentes (plusieurs leaders en même temps)
+
+- La soumission finale utilise un **`updateMany` atomique** sur le participant (`status: JOINED`) : une seule requête gagne ; les autres reçoivent « déjà soumis ». Pour les **équipes**, **équipe + membres** sont mis à jour dans la **même transaction MongoDB** que le leader (nécessite un serveur en **replica set**, ex. MongoDB Atlas ou instance locale configurée en replica set).
+- Les jobs BullMQ de scoring utilisent un **`jobId` stable par participant** (`scoring-<participantId>`) pour éviter d’empiler plusieurs fois le même scoring si Redis accepte la déduplication.

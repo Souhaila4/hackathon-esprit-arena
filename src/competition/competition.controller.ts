@@ -520,6 +520,8 @@ export class CompetitionController {
   }
 
   @Patch(':id/checkpoints/:checkpointId/submit')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ checkpoint: {} })
   @ApiOperation({
     summary: 'Submit a checkpoint (proof URL and optional notes)',
   })

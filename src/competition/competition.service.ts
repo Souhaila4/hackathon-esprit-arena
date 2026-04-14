@@ -13,7 +13,12 @@ import { EmailService } from '../email/email.service';
 import { AntiCheatService } from '../anti-cheat/anti-cheat.service';
 import { ScoringDispatcherService } from '../scoring/scoring-dispatcher.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { UserRole, type Specialty, type Prisma, EquipeMemberRole } from '@prisma/client';
+import {
+  UserRole,
+  type Specialty,
+  type Prisma,
+  EquipeMemberRole,
+} from '@prisma/client';
 import * as admin from 'firebase-admin';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -1635,7 +1640,6 @@ export class CompetitionService {
         );
       }
 
-      // Check if equipe already submitted
       const equipe = await this.prisma.equipe.findUnique({
         where: { id: participation.equipeId },
       });
@@ -1657,13 +1661,19 @@ export class CompetitionService {
       );
     }
 
+    const alreadySubmittedMessage =
+      'You have already submitted your work for this competition.';
+
     if (competition.antiCheatEnabled) {
       const score = await this.antiCheatService.analyzeRepository(githubUrl);
       const threshold = competition.antiCheatThreshold ?? 70;
 
       if (score > threshold) {
-        const updated = await this.prisma.competitionParticipant.update({
-          where: { id: participation.id },
+        const dq = await this.prisma.competitionParticipant.updateMany({
+          where: {
+            id: participation.id,
+            status: ParticipantStatus.JOINED,
+          },
           data: {
             githubUrl,
             antiCheatScore: score,
@@ -1671,6 +1681,16 @@ export class CompetitionService {
             submittedAt: new Date(),
           },
         });
+        if (dq.count === 0) {
+          throw new BadRequestException(alreadySubmittedMessage);
+        }
+
+        const updated = await this.prisma.competitionParticipant.findUnique({
+          where: { id: participation.id },
+        });
+        if (!updated) {
+          throw new NotFoundException('Participant not found after update');
+        }
 
         this.emitEvent('competition.participant_disqualified', {
           competitionId,
@@ -1688,25 +1708,58 @@ export class CompetitionService {
         };
       }
 
-      const updated = await this.prisma.competitionParticipant.update({
-        where: { id: participation.id },
-        data: {
-          githubUrl,
-          antiCheatScore: score,
-          status: ParticipantStatus.SUBMITTED,
-          submittedAt: new Date(),
-        },
-      });
+      const submittedAt = new Date();
+      const equipeId = participation.equipeId;
+      if (equipeId) {
+        await this.prisma.$transaction(async (tx) => {
+          const ok = await tx.competitionParticipant.updateMany({
+            where: {
+              id: participation.id,
+              status: ParticipantStatus.JOINED,
+            },
+            data: {
+              githubUrl,
+              antiCheatScore: score,
+              status: ParticipantStatus.SUBMITTED,
+              submittedAt,
+            },
+          });
+          if (ok.count === 0) {
+            throw new BadRequestException(alreadySubmittedMessage);
+          }
+          await this.markEquipeSubmittedTx(
+            tx,
+            equipeId,
+            githubUrl,
+            score,
+            competitionId,
+            userId,
+            submittedAt,
+          );
+        });
+      } else {
+        const ok = await this.prisma.competitionParticipant.updateMany({
+          where: {
+            id: participation.id,
+            status: ParticipantStatus.JOINED,
+          },
+          data: {
+            githubUrl,
+            antiCheatScore: score,
+            status: ParticipantStatus.SUBMITTED,
+            submittedAt,
+          },
+        });
+        if (ok.count === 0) {
+          throw new BadRequestException(alreadySubmittedMessage);
+        }
+      }
 
-      // Also update all equipe members and the equipe itself
-      if (participation.equipeId) {
-        await this.markEquipeSubmitted(
-          participation.equipeId,
-          githubUrl,
-          score,
-          competitionId,
-          userId,
-        );
+      const updated = await this.prisma.competitionParticipant.findUnique({
+        where: { id: participation.id },
+      });
+      if (!updated) {
+        throw new NotFoundException('Participant not found after update');
       }
 
       this.scoringDispatcher.dispatchAfterSubmit(updated.id, githubUrl);
@@ -1727,24 +1780,56 @@ export class CompetitionService {
       };
     }
 
-    const updated = await this.prisma.competitionParticipant.update({
-      where: { id: participation.id },
-      data: {
-        githubUrl,
-        status: ParticipantStatus.SUBMITTED,
-        submittedAt: new Date(),
-      },
-    });
+    const submittedAtNoAc = new Date();
+    const equipeIdNoAc = participation.equipeId;
+    if (equipeIdNoAc) {
+      await this.prisma.$transaction(async (tx) => {
+        const ok = await tx.competitionParticipant.updateMany({
+          where: {
+            id: participation.id,
+            status: ParticipantStatus.JOINED,
+          },
+          data: {
+            githubUrl,
+            status: ParticipantStatus.SUBMITTED,
+            submittedAt: submittedAtNoAc,
+          },
+        });
+        if (ok.count === 0) {
+          throw new BadRequestException(alreadySubmittedMessage);
+        }
+        await this.markEquipeSubmittedTx(
+          tx,
+          equipeIdNoAc,
+          githubUrl,
+          null,
+          competitionId,
+          userId,
+          submittedAtNoAc,
+        );
+      });
+    } else {
+      const ok = await this.prisma.competitionParticipant.updateMany({
+        where: {
+          id: participation.id,
+          status: ParticipantStatus.JOINED,
+        },
+        data: {
+          githubUrl,
+          status: ParticipantStatus.SUBMITTED,
+          submittedAt: submittedAtNoAc,
+        },
+      });
+      if (ok.count === 0) {
+        throw new BadRequestException(alreadySubmittedMessage);
+      }
+    }
 
-    // Also update all equipe members and the equipe itself
-    if (participation.equipeId) {
-      await this.markEquipeSubmitted(
-        participation.equipeId,
-        githubUrl,
-        null,
-        competitionId,
-        userId,
-      );
+    const updated = await this.prisma.competitionParticipant.findUnique({
+      where: { id: participation.id },
+    });
+    if (!updated) {
+      throw new NotFoundException('Participant not found after update');
     }
 
     this.scoringDispatcher.dispatchAfterSubmit(updated.id, githubUrl);
@@ -1762,24 +1847,31 @@ export class CompetitionService {
     };
   }
 
-  private async markEquipeSubmitted(
+  /** Équipe + membres dans la même transaction que le leader (soumission atomique). */
+  private async markEquipeSubmittedTx(
+    tx: Prisma.TransactionClient,
     equipeId: string,
     githubUrl: string,
     antiCheatScore: number | null,
     competitionId: string,
     submitterId: string,
-  ) {
-    await this.prisma.equipe.update({
-      where: { id: equipeId },
+    submittedAt: Date,
+  ): Promise<void> {
+    const eq = await tx.equipe.updateMany({
+      where: { id: equipeId, submittedAt: null },
       data: {
         githubUrl,
         antiCheatScore,
-        submittedAt: new Date(),
+        submittedAt,
       },
     });
+    if (eq.count === 0) {
+      throw new BadRequestException(
+        'Your team has already submitted work for this competition.',
+      );
+    }
 
-    // Mark all other equipe members as SUBMITTED
-    await this.prisma.competitionParticipant.updateMany({
+    await tx.competitionParticipant.updateMany({
       where: {
         equipeId,
         competitionId,
@@ -1790,7 +1882,7 @@ export class CompetitionService {
         githubUrl,
         antiCheatScore,
         status: ParticipantStatus.SUBMITTED,
-        submittedAt: new Date(),
+        submittedAt,
       },
     });
   }
