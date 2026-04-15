@@ -57,9 +57,10 @@ export default function SignUpPage() {
         saveToken(res.tokens.accessToken);
       }
       const targetEmail = res?.email ?? email;
-      setMessage(res?.message ?? 'Compte créé. Un code de vérification a été envoyé à votre email.');
+      setMessage(res?.message ?? 'Bienvenue! Redirection vers le tableau de bord...');
       setTimeout(() => {
-        window.location.assign(`/verify?email=${encodeURIComponent(targetEmail)}`);
+        // User is now logged in - redirect directly to dashboard
+        window.location.assign(`/dashboard`);
       }, 1500);
     } catch (err: unknown) {
       const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message?: string }).message) : 'ENROLLMENT FAILED. PROTOCOL ERROR.';
