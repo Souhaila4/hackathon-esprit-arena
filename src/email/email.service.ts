@@ -12,14 +12,18 @@ export class EmailService {
     const smtpPass = this.config.get<string>('SMTP_PASSWORD') || 'tuil omlu fawc jido';
     
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // Use STARTTLS instead of SSL/TLS
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
+      logger: true,
+      debug: false,
     });
     
-    this.logger.log(`Email service initialized with user: ${smtpUser}`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS)`);
   }
 
   async sendVerificationCode(
