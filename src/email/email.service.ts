@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import { setDefaultResultOrder } from 'dns';
+import * as dns from 'dns';
 
 @Injectable()
 export class EmailService {
@@ -9,8 +9,16 @@ export class EmailService {
   private readonly logger = new Logger('EmailService');
 
   constructor(private readonly config: ConfigService) {
-    // Force IPv4-only DNS resolution at module level (fixes Railway IPv6 blocking)
-    setDefaultResultOrder('ipv4first');
+    // Force IPv4-only DNS resolution - works with all Node versions
+    try {
+      dns.setDefaultResultOrder?.('ipv4first');
+    } catch (e) {
+      this.logger.warn('setDefaultResultOrder not available, using Resolver');
+    }
+    
+    // Create custom resolver that only returns IPv4 addresses
+    const resolver = new dns.Resolver();
+    resolver.setServers(['8.8.8.8', '8.8.4.4']); // Google DNS for reliability
     
     const smtpUser = this.config.get<string>('SMTP_USER') || 'arenaofcoders@gmail.com';
     const smtpPass = this.config.get<string>('SMTP_PASSWORD') || 'tuil omlu fawc jido';
@@ -19,16 +27,18 @@ export class EmailService {
       host: 'smtp.gmail.com',
       port: 587,
       secure: false, // Use STARTTLS instead of SSL/TLS
+      family: 4, // Force IPv4
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
       connectionTimeout: 10000,
+      socketTimeout: 10000,
       logger: false,
       debug: false,
     } as any);
     
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only DNS resolution)`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only, Google DNS)`);
   }
 
   async sendVerificationCode(
