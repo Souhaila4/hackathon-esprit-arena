@@ -23,7 +23,7 @@ export class EmailService {
       logger: false,
       debug: false,
       connectionTimeout: 10000,
-    });
+    } as any);
     
     this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4 only)`);
   }
