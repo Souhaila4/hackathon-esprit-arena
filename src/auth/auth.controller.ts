@@ -32,8 +32,6 @@ import {
 import { AuthService } from './auth.service';
 import { SignUpDto } from './dto/sign-up.dto';
 import { SignInDto } from './dto/sign-in.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateProfileDto } from '../user/dto/update-profile.dto';
@@ -123,7 +121,7 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description:
-      'User created, verification code sent to email. No tokens until email is verified.',
+      'User created and logged in. Returns user data and access tokens.',
   })
   @ApiResponse({
     status: 400,
@@ -167,31 +165,6 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid email or password' })
   async signIn(@Body() dto: SignInDto) {
     return this.authService.signIn(dto);
-  }
-
-  @Post('verify-email')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify email with 6-digit code and get JWT' })
-  @ApiResponse({
-    status: 200,
-    description: 'Email verified, returns user and tokens',
-  })
-  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
-  async verifyEmail(@Body() dto: VerifyEmailDto) {
-    return this.authService.verifyEmail(dto.email, dto.code);
-  }
-
-  @Post('resend-verification')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend verification code to email' })
-  @ApiResponse({ status: 200, description: 'Verification code sent' })
-  @ApiResponse({
-    status: 400,
-    description: 'User not found or already verified',
-  })
-  async resendVerification(@Body() dto: ResendVerificationDto) {
-    await this.authService.resendVerificationCode(dto.email);
-    return { message: 'Verification code sent successfully' };
   }
 
   @Post('forgot-password')

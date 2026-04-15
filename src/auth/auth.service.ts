@@ -9,7 +9,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UserService } from '../user/user.service';
-import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { CvExtractionService } from '../cv-extraction/cv-extraction.service';
 import { PasswordResetService } from '../password-reset/password-reset.service';
 import { StreamService } from '../stream/stream.service';
@@ -35,7 +34,6 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
-    private readonly emailVerificationService: EmailVerificationService,
     private readonly cvExtractionService: CvExtractionService,
     private readonly apifyService: ApifyService,
     private readonly scraperService: ScraperService,
@@ -49,7 +47,7 @@ export class AuthService {
     dto: SignUpDto,
     resumeBuffer: Buffer | undefined,
     avatarFile?: Express.Multer.File,
-  ): Promise<{ email: string; message: string }> {
+  ): Promise<{ user: AuthUser; tokens: AuthTokens }> {
     try {
       let avatarUrl: string | null = null;
       if (avatarFile?.buffer) {
@@ -177,22 +175,17 @@ export class AuthService {
           );
         });
 
-      try {
-        await this.emailVerificationService.sendVerificationCode(
-          user.email,
-          user.firstName,
-        );
-      } catch {
-        throw new InternalServerErrorException(
-          'Failed to send verification email. Please check your email address or try again later.',
-        );
-      }
-
-      // Ne pas retourner de tokens : l'utilisateur doit d'abord vérifier son email
-      return {
+      // Generate and return tokens immediately (email verification removed)
+      const payload: JwtPayload = {
+        sub: user.id,
         email: user.email,
-        message:
-          'Verification code sent to your email. Please verify to complete registration.',
+        role: user.role,
+      };
+      const tokens = this.issueTokens(payload);
+
+      return {
+        user: this.toAuthUser(user),
+        tokens,
       };
     } catch (err: unknown) {
       if (err instanceof HttpException) throw err;
@@ -272,36 +265,6 @@ export class AuthService {
       d: 86400,
     };
     return value * (multipliers[unit] ?? 86400);
-  }
-
-  async verifyEmail(
-    email: string,
-    code: string,
-  ): Promise<{ user: AuthUser; tokens: AuthTokens }> {
-    await this.emailVerificationService.verifyCode(email, code);
-    const user = await this.userService.findByEmail(email);
-    if (!user) throw new BadRequestException('User not found');
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    };
-    const tokens = this.issueTokens(payload);
-    return { user: this.toAuthUser(user), tokens };
-  }
-
-  async resendVerificationCode(email: string): Promise<void> {
-    const user = await this.userService.findByEmail(email);
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-    if (user.isEmailVerified) {
-      throw new BadRequestException('Email is already verified');
-    }
-    await this.emailVerificationService.sendVerificationCode(
-      user.email,
-      user.firstName,
-    );
   }
 
   async requestPasswordReset(email: string): Promise<void> {

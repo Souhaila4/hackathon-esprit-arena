@@ -6,7 +6,6 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UserModule } from '../user/user.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { EmailVerificationModule } from '../email-verification/email-verification.module';
 import { CvExtractionModule } from '../cv-extraction/cv-extraction.module';
 import { PasswordResetModule } from '../password-reset/password-reset.module';
 import { ApifyModule } from '../apify/apify.module';
@@ -30,7 +29,6 @@ function parseExpiresInToSeconds(expiresIn: string): number {
 @Module({
   imports: [
     UserModule,
-    EmailVerificationModule,
     CvExtractionModule,
     ApifyModule,
     ScraperModule,
