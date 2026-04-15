@@ -15,15 +15,17 @@ export class EmailService {
       host: 'smtp.gmail.com',
       port: 587,
       secure: false, // Use STARTTLS instead of SSL/TLS
+      family: 4, // Force IPv4 (Railway blocks IPv6)
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-      logger: true,
+      logger: false,
       debug: false,
+      connectionTimeout: 10000,
     });
     
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS)`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4 only)`);
   }
 
   async sendVerificationCode(
