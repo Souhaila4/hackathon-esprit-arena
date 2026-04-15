@@ -16,6 +16,7 @@ export interface CreateUserInput {
   githubUrl?: string;
   linkedinUrl?: string;
   avatarUrl?: string;
+  isEmailVerified?: boolean; // Set to true on signup (email verification removed)
 }
 
 const PROFILE_SELECT = {
@@ -169,6 +170,7 @@ export class UserService {
         firstName: data.firstName,
         lastName: data.lastName,
         role: data.role ?? UserRole.USER,
+        ...(data.isEmailVerified != null && { isEmailVerified: data.isEmailVerified }),
         ...(data.avatarUrl != null &&
           data.avatarUrl !== '' && { avatarUrl: data.avatarUrl }),
         ...(data.githubUrl != null &&

@@ -66,6 +66,7 @@ export class AuthService {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         role: UserRole.USER,
+        isEmailVerified: true, // Email verification removed - users are verified on signup
         ...(dto.githubUrl && { githubUrl: dto.githubUrl.trim() }),
         ...(dto.linkedinUrl && { linkedinUrl: dto.linkedinUrl.trim() }),
         ...(avatarUrl && { avatarUrl }),
