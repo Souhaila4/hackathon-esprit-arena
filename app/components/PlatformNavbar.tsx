@@ -45,69 +45,64 @@ export default function PlatformNavbar() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/10 bg-[#0f1419]">
       <div className="flex items-center justify-between h-16 px-4 md:px-6 gap-4 max-w-[1920px] mx-auto">
-        {/* Logo : carré bleu foncé + icône terminal ">_" + texte */}
+        {/* Logo - Gauche */}
         <Link href={user ? "/home" : "/"} className="flex items-center gap-3 shrink-0">
           <div className="w-12 h-10 rounded-lg bg-[#1a2332] border border-cyan-500/30 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.15)]">
             <span className="text-[var(--accent)] font-mono text-sm font-bold tracking-tight">&gt;_</span>
           </div>
-          <div>
+          <div className="hidden sm:block">
             <p className="text-base font-bold text-white leading-tight">Arena of Coders</p>
             <p className="text-[10px] text-cyan-400 uppercase tracking-wider leading-tight font-medium">{t.competitiveHub}</p>
           </div>
         </Link>
 
-        {/* Liens centraux */}
-        <nav className="flex items-center gap-6 md:gap-8">
-          {/* Home - visible only for regular users and during loading */}
-          {!userLoaded || (user && user?.role !== "ADMIN" && user?.role !== "COMPANY") ? (
-            <Link href={user ? "/home" : "/"} className={`text-sm font-medium transition-colors ${(user ? isActive("/home") : isActive("/") && pathname === "/") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-white hover:text-cyan-400"}`}>
-              {t.nav.home}
+        {/* Centre: Online Status + DADA Coins */}
+        {userLoaded && user && (
+          <div className="flex items-center gap-6 flex-1 justify-center">
+            {/* Online Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-white">Online</span>
+              <div className="relative w-12 h-6 bg-emerald-500 rounded-full cursor-pointer shadow-lg">
+                <div className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform"></div>
+              </div>
+            </div>
+            
+            {/* DADA Coins */}
+            <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 border border-white/20">
+              <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" />
+              </svg>
+              <span className="font-bold text-white">992 DADA</span>
+            </div>
+          </div>
+        )}
+
+        {/* Droite: Barre navigateur + langue/profil */}
+        <div className="flex items-center gap-4 shrink-0">
+          {/* Liens de navigation */}
+          <nav className="hidden md:flex items-center gap-4">
+            {!userLoaded || (user && user?.role !== "ADMIN" && user?.role !== "COMPANY") ? (
+              <Link href={user ? "/home" : "/"} className={`text-xs font-medium transition-colors ${(user ? isActive("/home") : isActive("/") && pathname === "/") ? "text-cyan-400" : "text-white/70 hover:text-cyan-400"}`}>
+                {t.nav.home}
+              </Link>
+            ) : null}
+
+            <Link href="/hackathon" className={`text-xs font-medium transition-colors ${isActive("/hackathon") ? "text-cyan-400" : "text-white/70 hover:text-cyan-400"}`}>
+              {t.nav.hackathon}
             </Link>
-          ) : null}
-
-          <Link href="/hackathon" className={`text-sm font-medium transition-colors ${isActive("/hackathon") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-white hover:text-cyan-400"}`}>
-            {t.nav.hackathon}
-          </Link>
-          <Link
-            href="/classements"
-            prefetch={true}
-            className={`text-sm font-medium transition-colors ${isActive("/classements") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-white hover:text-cyan-400"}`}
-          >
-            {t.nav.leaderboards}
-          </Link>
-
-          {/* Profile - visible only for regular users and during loading */}
-          {!userLoaded || (user && user?.role !== "ADMIN" && user?.role !== "COMPANY") ? (
-            <Link href="/profile" className={`text-sm font-medium transition-colors ${isActive("/profile") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-white hover:text-cyan-400"}`}>
-              {t.nav.profile}
+            
+            <Link href="/classements" className={`text-xs font-medium transition-colors ${isActive("/classements") ? "text-cyan-400" : "text-white/70 hover:text-cyan-400"}`}>
+              {t.nav.leaderboards}
             </Link>
-          ) : null}
 
-          {/* Dashboard - visible only for admin */}
-          {userLoaded && user?.role === "ADMIN" && (
-            <Link href="/dashboard" className={`text-sm font-medium transition-colors ${isActive("/dashboard") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-amber-400 hover:text-amber-300"}`}>
-              Dashboard
-            </Link>
-          )}
+            {!userLoaded || (user && user?.role !== "ADMIN" && user?.role !== "COMPANY") ? (
+              <Link href="/profile" className={`text-xs font-medium transition-colors ${isActive("/profile") ? "text-cyan-400" : "text-white/70 hover:text-cyan-400"}`}>
+                {t.nav.profile}
+              </Link>
+            ) : null}
+          </nav>
 
-          {/* Company Dashboard - visible only for company */}
-          {userLoaded && user?.role === "COMPANY" && (
-            <Link href="/company-dashboard" className={`text-sm font-medium transition-colors ${isActive("/company-dashboard") ? "text-cyan-400 border-b-2 border-cyan-400 pb-0.5" : "text-emerald-400 hover:text-emerald-300"}`}>
-              Company Dashboard
-            </Link>
-          )}
-        </nav>
-
-        {/* Barre de recherche */}
-        <div className="hidden lg:flex items-center flex-1 max-w-xs mx-4 rounded-lg bg-white/10 border border-white/10 overflow-hidden">
-          <span className="pl-3 text-white/50">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </span>
-          <input type="search" placeholder={t.nav.searchChallenge} className="w-full py-2.5 pl-2 pr-4 text-sm bg-transparent text-white placeholder:text-white/50 outline-none" />
-        </div>
-
-        {/* Droite : langue, notifications, profil ou connexion */}
-        <div className="flex items-center gap-2 shrink-0">
+          {/* Langue */}
           <div className="relative" ref={langRef}>
             <button
               type="button"
@@ -131,22 +126,17 @@ export default function PlatformNavbar() {
               </ul>
             )}
           </div>
-          <button type="button" className="p-2.5 rounded-lg text-white/80 hover:bg-white/10 transition-colors" aria-label="Notifications">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-          </button>
+
+          {/* Profil */}
           {userLoaded && (user ? (
             <div className="relative" ref={profileRef}>
               <button
                 type="button"
                 onClick={() => setProfileOpen((o) => !o)}
-                className="flex items-center gap-3 pl-2 pr-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
                 aria-expanded={profileOpen}
                 aria-label="Profil"
               >
-                <div className="text-right hidden sm:block">
-                  <p className="text-sm font-bold text-white leading-tight">{user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : "Utilisateur"}</p>
-                  <p className="text-[10px] text-white/50 leading-tight">Diamond II</p>
-                </div>
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-sm font-bold text-black">
                     {user?.firstName?.[0] || "?"}{user?.lastName?.[0] || ""}
