@@ -20,6 +20,15 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ p
 
 async function proxy(request: Request, { path }: { path: string[] }) {
   const backend = getBackendOrigin();
+  if (!backend) {
+    return Response.json(
+      {
+        message:
+          "Backend non configuré : définissez API_URL et NEXT_PUBLIC_API_URL avec l’URL HTTPS du Nest (ex. https://hackathon-esprit-arena-production.up.railway.app) dans les variables d’environnement Railway, puis redéployez le service frontend.",
+      },
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
   const pathStr = path.length ? path.join("/") : "";
   const url = `${backend}/${pathStr}${new URL(request.url).search}`;
 
@@ -81,11 +90,15 @@ async function proxy(request: Request, { path }: { path: string[] }) {
       innerMessage.includes("ECONNRESET") ||
       code === "ECONNRESET" ||
       innerCode === "ECONNRESET";
+    const isLocalBackend =
+      backend.includes("127.0.0.1") || backend.includes("localhost");
     const hint = hasRefused
-      ? "Le backend NestJS n'est pas démarré. Démarrez-le : dans le dossier ArenaOfCoders-Backend-main\\ArenaOfCoders-Backend-main lancez « npm run start:dev » (port 3000). Puis rechargez cette page."
+      ? isLocalBackend
+        ? "Le backend NestJS n’est pas démarré localement. Dans arenaofcoders-backend-negzeoui lancez « npm run start:dev » (port 3000), ou créez un fichier .env.local à la racine du front avec NEXT_PUBLIC_API_URL / API_URL pointant vers l’API Railway."
+        : "Impossible de joindre l’URL du backend (refus de connexion). Vérifiez que le service Nest est déployé et que NEXT_PUBLIC_API_URL / API_URL correspondent à l’URL Railway du backend."
       : hasReset
-        ? "La connexion au backend a été interrompue (crash ou redémarrage). Vérifiez le terminal du backend et relancez « npm run start:dev »."
-        : "Vérifiez que le backend tourne sur le port 3000 (npm run start:dev dans le dossier backend).";
+        ? "La connexion au backend a été interrompue (crash ou redémarrage). Réessayez ou vérifiez les logs du backend."
+        : `Erreur réseau vers le backend (${backend}). En local : démarrez Nest sur le port 3000 ou pointez les variables vers l’API distante. Détails : ${message}`;
     return Response.json(
       { message: `Backend injoignable. ${hint}` },
       { status: 502, headers: { "Content-Type": "application/json" } }
