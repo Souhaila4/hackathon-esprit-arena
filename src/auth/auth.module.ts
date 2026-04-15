@@ -11,6 +11,7 @@ import { CvExtractionModule } from '../cv-extraction/cv-extraction.module';
 import { PasswordResetModule } from '../password-reset/password-reset.module';
 import { ApifyModule } from '../apify/apify.module';
 import { ScraperModule } from '../scraper/scraper.module';
+import { StreamModule } from '../stream/stream.module';
 
 function parseExpiresInToSeconds(expiresIn: string): number {
   const match = expiresIn.match(/^(\d+)([smhd])$/);
@@ -33,6 +34,7 @@ function parseExpiresInToSeconds(expiresIn: string): number {
     CvExtractionModule,
     ApifyModule,
     ScraperModule,
+    StreamModule,
     PasswordResetModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({

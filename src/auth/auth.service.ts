@@ -12,6 +12,8 @@ import { UserService } from '../user/user.service';
 import { EmailVerificationService } from '../email-verification/email-verification.service';
 import { CvExtractionService } from '../cv-extraction/cv-extraction.service';
 import { PasswordResetService } from '../password-reset/password-reset.service';
+import { StreamService } from '../stream/stream.service';
+import { GENERAL_MEMBER_ROOM_ID } from '../stream/room-specialty.config';
 import { ApifyService } from '../apify/apify.service';
 import { ScraperService } from '../scraper/scraper.service';
 import { SignUpDto } from './dto/sign-up.dto';
@@ -38,6 +40,7 @@ export class AuthService {
     private readonly apifyService: ApifyService,
     private readonly scraperService: ScraperService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly streamService: StreamService,
   ) {
     this.jwtExpiresIn = this.config.get<string>('JWT_EXPIRES_IN', '7d');
   }
@@ -164,6 +167,15 @@ export class AuthService {
           // Scraping GitHub a échoué - continue sans repos
         }
       }
+
+      void this.streamService
+        .ensureRoomMember(user.id, GENERAL_MEMBER_ROOM_ID)
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[SIGNUP] Could not add user to general member room (${GENERAL_MEMBER_ROOM_ID}): ${msg}`,
+          );
+        });
 
       try {
         await this.emailVerificationService.sendVerificationCode(

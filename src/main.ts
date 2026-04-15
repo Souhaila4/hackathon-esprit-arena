@@ -12,7 +12,14 @@ async function bootstrap() {
   if (process.env.TRUST_PROXY === '1') {
     app.set('trust proxy', 1);
   }
-  app.enableCors();
+  const frontendOrigins = process.env.FRONTEND_URL?.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (frontendOrigins?.length) {
+    app.enableCors({ origin: frontendOrigins, credentials: true });
+  } else {
+    app.enableCors();
+  }
 
   // Serve files from the 'uploads' directory
   app.useStaticAssets(path.join(process.cwd(), 'uploads'), {

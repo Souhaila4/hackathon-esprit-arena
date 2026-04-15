@@ -69,12 +69,12 @@ export class StreamController {
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary:
-      'Toutes les salles hackathon avec indicateur canParticipate selon la spécialité',
+      'Salle hackathon commune (membres) — une seule salle pour tous, canParticipate=true',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Liste des salles (toutes affichées, canParticipate=true uniquement pour la spécialité)',
+      'Liste contenant la salle générale (room-general) pour tous les membres',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   getRooms(@CurrentUser() user: User) {
@@ -93,7 +93,8 @@ export class StreamController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 403,
-    description: 'Accès refusé : salle non autorisée pour votre spécialité',
+    description:
+      'Accès refusé : seule la salle générale (room-general) est ouverte aux membres',
   })
   async roomJoin(
     @Param('roomId') roomId: string,
@@ -101,7 +102,7 @@ export class StreamController {
   ): Promise<{ ok: boolean }> {
     if (!canAccessRoom(roomId, user.mainSpecialty ?? null)) {
       throw new ForbiddenException(
-        "Vous ne pouvez accéder qu'à la salle correspondant à votre spécialité. Définissez votre spécialité dans Paramètres si besoin.",
+        "Seule la salle générale (room-general) est accessible pour les membres.",
       );
     }
     await this.streamService.ensureRoomMember(user.id, roomId);

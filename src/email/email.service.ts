@@ -100,4 +100,18 @@ export class EmailService {
       console.error('Failed to send hackathon notification email:', error);
     }
   }
+
+  /** E-mail HTML libre (ex. participants présélectionnés, envoyé depuis l’admin). */
+  async sendCustomHtmlEmail(
+    to: string,
+    subject: string,
+    html: string,
+  ): Promise<void> {
+    await this.transporter.sendMail({
+      from: 'arenaofcoders@gmail.com',
+      to,
+      subject,
+      html,
+    });
+  }
 }

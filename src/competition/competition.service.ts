@@ -339,14 +339,6 @@ export class CompetitionService {
           competitionId: competition.id,
         },
       });
-      if (competition.specialty) {
-        await this.emailService.sendHackathonNotification(
-          user.email,
-          user.firstName,
-          competition.title,
-          competition.specialty,
-        );
-      }
     }
 
     // Send FCM push notifications
@@ -778,6 +770,59 @@ export class CompetitionService {
         };
       }),
     };
+  }
+
+  /**
+   * Envoie un e-mail HTML aux participants présélectionnés (top score) d’un hackathon.
+   * Réservé à l’admin (appelé depuis AdminController).
+   */
+  async sendEmailToPreselectedParticipants(
+    competitionId: string,
+    subjectTemplate: string,
+    htmlBodyTemplate: string,
+    limit?: number,
+  ): Promise<{ sent: number; total: number; failedEmails: string[] }> {
+    const competition = await this.findCompetitionById(competitionId);
+    const top = await this.getTopParticipants(competitionId, limit);
+    const failedEmails: string[] = [];
+    let sent = 0;
+    const titleSafe = this.escapeHtmlForEmail(competition.title);
+
+    for (const row of top.preselected) {
+      const email = row.user?.email;
+      if (!email?.trim()) continue;
+      const firstName = row.user?.firstName ?? 'Participant';
+      const firstNameSafe = this.escapeHtmlForEmail(firstName);
+
+      const subject = subjectTemplate
+        .replace(/\{\{firstName\}\}/g, firstName)
+        .replace(/\{\{competitionTitle\}\}/g, competition.title);
+
+      const html = htmlBodyTemplate
+        .replace(/\{\{firstName\}\}/g, firstNameSafe)
+        .replace(/\{\{competitionTitle\}\}/g, titleSafe);
+
+      try {
+        await this.emailService.sendCustomHtmlEmail(email, subject, html);
+        sent++;
+      } catch {
+        failedEmails.push(email);
+      }
+    }
+
+    return {
+      sent,
+      total: top.preselected.length,
+      failedEmails,
+    };
+  }
+
+  private escapeHtmlForEmail(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   /**

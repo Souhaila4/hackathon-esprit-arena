@@ -1,14 +1,26 @@
 import { Specialty } from '@prisma/client';
 
-/** Toutes les spécialités (enum Prisma). Une salle par spécialité, créée à la demande. */
+/** Toutes les spécialités (enum Prisma). Utilisé pour l’admin / stats — plus pour les salles membres. */
 export const ALL_SPECIALTIES: Specialty[] = Object.values(
   Specialty,
 ) as Specialty[];
 
-/** Préfixe des IDs de salle : room-<SPECIALTY> (ex. room-FRONTEND). La salle est créée côté Stream au premier join. */
+/** Préfixe historique des IDs : room-<SPECIALTY> (ex. room-FRONTEND). */
 export const ROOM_ID_PREFIX = 'room-';
 
-/** Libellés pour l'affichage (nom + description) par spécialité */
+/**
+ * Salle unique pour tous les membres (hors canaux d’équipe).
+ * Stream channel id — pas une valeur de l’enum Specialty (getSpecialtyFromRoomId → null).
+ */
+export const GENERAL_MEMBER_ROOM_ID = `${ROOM_ID_PREFIX}general`;
+
+const GENERAL_MEMBER_ROOM_LABEL = {
+  name: 'Salle générale',
+  description:
+    'Espace commun : chat, visio et partage d’écran pour tous les membres.',
+} as const;
+
+/** Libellés pour l’affichage (nom + description) par spécialité — référence historique / admin */
 export const SPECIALTY_LABELS: Record<
   Specialty,
   { name: string; description: string }
@@ -33,9 +45,14 @@ export interface RoomInfo {
   description: string;
 }
 
+function normalizeRoomId(roomId: string): string {
+  return String(roomId)
+    .trim()
+    .replace(/[^a-z0-9-_]/gi, '');
+}
+
 /**
- * Génère l'ID de salle pour une spécialité.
- * Une salle par spécialité ; côté Stream elle sera créée au premier getOrCreate.
+ * Génère l'ID de salle pour une spécialité (référence historique).
  */
 export function getRoomIdForSpecialty(specialty: Specialty): string {
   return `${ROOM_ID_PREFIX}${specialty}`;
@@ -43,13 +60,12 @@ export function getRoomIdForSpecialty(specialty: Specialty): string {
 
 /**
  * Extrait la spécialité à partir d'un roomId (ex. room-FRONTEND -> FRONTEND).
- * Retourne null si le format est invalide ou si la spécialité n'existe pas.
+ * Retourne null pour room-general ou format invalide.
  */
 export function getSpecialtyFromRoomId(roomId: string): Specialty | null {
-  const safe = String(roomId)
-    .trim()
-    .replace(/[^a-z0-9-_]/gi, '');
+  const safe = normalizeRoomId(roomId);
   if (!safe.startsWith(ROOM_ID_PREFIX)) return null;
+  if (safe === GENERAL_MEMBER_ROOM_ID) return null;
   const specialty = safe
     .slice(ROOM_ID_PREFIX.length)
     .toUpperCase() as Specialty;
@@ -57,61 +73,49 @@ export function getSpecialtyFromRoomId(roomId: string): Specialty | null {
 }
 
 /**
- * Vérifie si l'utilisateur (avec mainSpecialty défini après analyse du CV) peut accéder à la salle.
- * Accès autorisé uniquement si la salle correspond à sa spécialité.
+ * Accès à la salle hackathon « membres » : uniquement la salle générale, pour tout utilisateur connecté.
+ * Les anciennes salles room-FRONTEND, etc. ne sont plus ouvertes via ce flux (canaux d’équipe inchangés ailleurs).
  */
 export function canAccessRoom(
   roomId: string,
-  mainSpecialty: Specialty | null,
+  _mainSpecialty: Specialty | null,
 ): boolean {
-  if (!mainSpecialty) return false;
-  const required = getSpecialtyFromRoomId(roomId);
-  return required === mainSpecialty;
+  return normalizeRoomId(roomId) === GENERAL_MEMBER_ROOM_ID;
 }
 
 export interface RoomWithAccess extends RoomInfo {
-  specialty: Specialty;
+  specialty?: Specialty | null;
   canParticipate: boolean;
 }
 
 /**
- * Retourne une salle virtuelle pour une spécialité (créée côté Stream au premier join).
+ * @deprecated Préférer getAllRoomsWithAccess. Conservé pour compatibilité : retourne la salle générale.
  */
-function getRoomInfoForSpecialty(
-  specialty: Specialty,
-): RoomInfo & { specialty: Specialty } {
-  const labels = SPECIALTY_LABELS[specialty] ?? {
-    name: `Salle ${specialty}`,
-    description: `Spécialité ${specialty}`,
-  };
-  return {
-    id: getRoomIdForSpecialty(specialty),
-    name: labels.name,
-    description: labels.description,
-    specialty,
-  };
-}
-
-/** Salles disponibles pour une spécialité (une seule : celle de l'utilisateur). */
 export function getRoomsForSpecialty(
-  mainSpecialty: Specialty | null,
+  _mainSpecialty: Specialty | null,
 ): RoomInfo[] {
-  if (!mainSpecialty) return [];
-  return [getRoomInfoForSpecialty(mainSpecialty)];
+  return [
+    {
+      id: GENERAL_MEMBER_ROOM_ID,
+      name: GENERAL_MEMBER_ROOM_LABEL.name,
+      description: GENERAL_MEMBER_ROOM_LABEL.description,
+    },
+  ];
 }
 
 /**
- * Liste toutes les salles (une par spécialité).
- * canParticipate = true uniquement pour la spécialité de l'utilisateur (celle détectée via le CV).
+ * Liste la salle commune pour tous les membres (indépendamment de la spécialité).
  */
 export function getAllRoomsWithAccess(
-  mainSpecialty: Specialty | null,
+  _mainSpecialty: Specialty | null,
 ): RoomWithAccess[] {
-  return ALL_SPECIALTIES.map((specialty) => {
-    const room = getRoomInfoForSpecialty(specialty);
-    return {
-      ...room,
-      canParticipate: mainSpecialty === specialty,
-    };
-  });
+  return [
+    {
+      id: GENERAL_MEMBER_ROOM_ID,
+      name: GENERAL_MEMBER_ROOM_LABEL.name,
+      description: GENERAL_MEMBER_ROOM_LABEL.description,
+      specialty: null,
+      canParticipate: true,
+    },
+  ];
 }

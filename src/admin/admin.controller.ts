@@ -22,13 +22,18 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { AdminService } from './admin.service';
 import { ReviewCompanyRequestDto } from './dto/review-company-request.dto';
+import { SendPreselectedEmailDto } from './dto/send-preselected-email.dto';
+import { CompetitionService } from '../competition/competition.service';
 
 @ApiTags('admin')
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)
 @ApiBearerAuth('access-token')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly competitionService: CompetitionService,
+  ) {}
 
   @Patch('users/:id/role')
   @ApiOperation({ summary: "Changer le rôle d'un utilisateur (Admin only)" })
@@ -130,6 +135,34 @@ export class AdminController {
       search,
       role,
     });
+  }
+
+  @Post('competitions/:competitionId/preselected/send-email')
+  @ApiOperation({
+    summary:
+      'Envoyer un e-mail aux participants présélectionnés (top score) d’un hackathon',
+    description:
+      'Cible les N meilleurs participants ayant soumis et un score (comme GET /competitions/:id/top-participants). Variables dans le sujet et le corps HTML : {{firstName}}, {{competitionTitle}}.',
+  })
+  @ApiParam({
+    name: 'competitionId',
+    description: 'ID MongoDB de la compétition',
+  })
+  @ApiBody({ type: SendPreselectedEmailDto })
+  @ApiResponse({
+    status: 200,
+    description: 'sent, total, failedEmails',
+  })
+  async sendPreselectedEmail(
+    @Param('competitionId') competitionId: string,
+    @Body() dto: SendPreselectedEmailDto,
+  ) {
+    return this.competitionService.sendEmailToPreselectedParticipants(
+      competitionId,
+      dto.subject,
+      dto.htmlBody,
+      dto.limit,
+    );
   }
 
   @Post('n8n/webhook-test')
