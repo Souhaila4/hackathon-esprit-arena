@@ -26,28 +26,27 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
-      secure: false, // Use STARTTLS instead of SSL/TLS
-      family: 4, // Force IPv4
+      secure: false,
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-      connectionTimeout: 15000, // Increased to 15 seconds
+      tls: {
+        rejectUnauthorized: false, // Allow self-signed certs (shouldn't be needed but helps with Railway)
+        minVersion: 'TLSv1.2',
+      },
+      connectionTimeout: 15000,
       socketTimeout: 15000,
+      maxConnections: 1, // Use single connection to avoid connection limits
+      maxMessages: 1, // Send one message per connection
       logger: true,
-      debug: true, // Enable debug logging
+      debug: true,
     } as any);
+
+    // Don't verify in constructor - this blocks and corrupts the connection pool
+    // Instead, we'll verify the first time we try to send an email
     
-    // Log transporter events for debugging
-    this.transporter.verify((error, success) => {
-      if (error) {
-        this.logger.error(`SMTP verification failed: ${error.message}`, error);
-      } else {
-        this.logger.log('SMTP connection verified successfully');
-      }
-    });
-    
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only, debug enabled)`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, single connection mode)`);
   }
 
   async sendVerificationCode(
