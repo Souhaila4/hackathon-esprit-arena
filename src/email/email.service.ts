@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { setDefaultResultOrder } from 'dns';
 
 @Injectable()
 export class EmailService {
@@ -8,6 +9,9 @@ export class EmailService {
   private readonly logger = new Logger('EmailService');
 
   constructor(private readonly config: ConfigService) {
+    // Force IPv4-only DNS resolution at module level (fixes Railway IPv6 blocking)
+    setDefaultResultOrder('ipv4first');
+    
     const smtpUser = this.config.get<string>('SMTP_USER') || 'arenaofcoders@gmail.com';
     const smtpPass = this.config.get<string>('SMTP_PASSWORD') || 'tuil omlu fawc jido';
     
@@ -15,17 +19,16 @@ export class EmailService {
       host: 'smtp.gmail.com',
       port: 587,
       secure: false, // Use STARTTLS instead of SSL/TLS
-      family: 4, // Force IPv4 (Railway blocks IPv6)
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
+      connectionTimeout: 10000,
       logger: false,
       debug: false,
-      connectionTimeout: 10000,
     } as any);
     
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4 only)`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only DNS resolution)`);
   }
 
   async sendVerificationCode(
