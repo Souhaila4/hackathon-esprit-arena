@@ -6,8 +6,10 @@
  * - Serveur (RSC, route handlers, etc.) : URL absolue vers le Nest.
  *
  * Variables :
- * - `NEXT_PUBLIC_API_URL` — URL du backend (ex. http://localhost:3000), lue partout
+ * - `NEXT_PUBLIC_API_URL` — URL du backend (ex. http://localhost:3000 ou https://….railway.app)
  * - `API_URL` — optionnel, prioritaire côté serveur uniquement (ex. http://backend:3000 en Docker)
+ *
+ * Production : définir dans `.env.local` ou les variables d’environnement du hébergeur (voir `.env.example`).
  */
 const DEFAULT_BACKEND_ORIGIN = "http://127.0.0.1:3000";
 

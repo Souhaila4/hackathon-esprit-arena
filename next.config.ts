@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
+      {
+        protocol: "https",
+        hostname: "hackathon-esprit-arena-production.up.railway.app",
+        pathname: "/**",
+      },
     ],
   },
   // Les appels `/api/*` sont relayés vers Nest par `app/api/[...path]/route.ts` (une seule couche, évite les doublons avec rewrites).
