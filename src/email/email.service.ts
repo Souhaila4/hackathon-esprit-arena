@@ -32,13 +32,22 @@ export class EmailService {
         user: smtpUser,
         pass: smtpPass,
       },
-      connectionTimeout: 10000,
-      socketTimeout: 10000,
-      logger: false,
-      debug: false,
+      connectionTimeout: 15000, // Increased to 15 seconds
+      socketTimeout: 15000,
+      logger: true,
+      debug: true, // Enable debug logging
     } as any);
     
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only, Google DNS)`);
+    // Log transporter events for debugging
+    this.transporter.verify((error, success) => {
+      if (error) {
+        this.logger.error(`SMTP verification failed: ${error.message}`, error);
+      } else {
+        this.logger.log('SMTP connection verified successfully');
+      }
+    });
+    
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4-only, debug enabled)`);
   }
 
   async sendVerificationCode(
