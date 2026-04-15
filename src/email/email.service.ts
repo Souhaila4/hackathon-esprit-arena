@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import * as dns from 'dns';
 
 @Injectable()
 export class EmailService {
@@ -9,44 +8,25 @@ export class EmailService {
   private readonly logger = new Logger('EmailService');
 
   constructor(private readonly config: ConfigService) {
-    // Force IPv4-only DNS resolution - works with all Node versions
-    try {
-      dns.setDefaultResultOrder?.('ipv4first');
-    } catch (e) {
-      this.logger.warn('setDefaultResultOrder not available, using Resolver');
-    }
-    
-    // Create custom resolver that only returns IPv4 addresses
-    const resolver = new dns.Resolver();
-    resolver.setServers(['8.8.8.8', '8.8.4.4']); // Google DNS for reliability
-    
     const smtpUser = this.config.get<string>('SMTP_USER') || 'arenaofcoders@gmail.com';
     const smtpPass = this.config.get<string>('SMTP_PASSWORD') || 'tuil omlu fawc jido';
     
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
-      secure: false,
+      secure: false, // Use STARTTLS instead of SSL
+      family: 4, // Force IPv4 DNS resolution - fixes Docker container IPv6 issues
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-      tls: {
-        rejectUnauthorized: false, // Allow self-signed certs (shouldn't be needed but helps with Railway)
-        minVersion: 'TLSv1.2',
-      },
-      connectionTimeout: 15000,
-      socketTimeout: 15000,
-      maxConnections: 1, // Use single connection to avoid connection limits
-      maxMessages: 1, // Send one message per connection
-      logger: true,
-      debug: true,
+      connectionTimeout: 10000,
+      socketTimeout: 10000,
+      logger: false,
+      debug: false,
     } as any);
-
-    // Don't verify in constructor - this blocks and corrupts the connection pool
-    // Instead, we'll verify the first time we try to send an email
     
-    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, single connection mode)`);
+    this.logger.log(`Email service initialized with user: ${smtpUser} (port 587 STARTTLS, IPv4 only)`);
   }
 
   async sendVerificationCode(
