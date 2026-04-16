@@ -185,6 +185,67 @@ export class AdminService {
   }
 
   /**
+   * Tous les hackathons avec leurs équipes et membres (emails inclus) — vue admin.
+   */
+  async getAllHackathonEquipesAdmin() {
+    const hackathons = await this.prisma.competition.findMany({
+      orderBy: { startDate: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        specialty: true,
+        startDate: true,
+        endDate: true,
+        equipes: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            isAutoFormed: true,
+            createdAt: true,
+            members: {
+              orderBy: { joinedAt: 'asc' },
+              select: {
+                id: true,
+                role: true,
+                joinedAt: true,
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                    avatarUrl: true,
+                    mainSpecialty: true,
+                  },
+                },
+              },
+            },
+            _count: { select: { members: true } },
+          },
+        },
+      },
+    });
+
+    return {
+      hackathons: hackathons.map((h) => ({
+        competition: {
+          id: h.id,
+          title: h.title,
+          status: h.status,
+          specialty: h.specialty,
+          startDate: h.startDate,
+          endDate: h.endDate,
+        },
+        equipes: h.equipes,
+        totalEquipes: h.equipes.length,
+      })),
+    };
+  }
+
+  /**
    * Appel du webhook n8n depuis le serveur pour éviter CORS.
    * Utilise l'URL de prod en priorité (toujours enregistrée) ; l'URL de test
    * n'est active qu'après avoir cliqué "Execute workflow" dans n8n.

@@ -167,6 +167,25 @@ export class StreamService {
   }
 
   /**
+   * Retire un utilisateur du canal de chat d’équipe (ex: expulsion par le leader).
+   */
+  async removeTeamChannelMember(
+    equipeId: string,
+    competitionId: string,
+    userId: string,
+  ): Promise<void> {
+    if (!this.streamClient) return;
+    if (!userId?.trim()) return;
+
+    const channelId = this.teamChannelId(equipeId, competitionId);
+    const uid = userId.trim();
+    const channel = this.streamClient.chat.channel('messaging', channelId);
+    await channel
+      .update({ remove_members: [uid] } as any)
+      .catch(() => {});
+  }
+
+  /**
    * Archive (freeze) tous les canaux de chat des équipes d'une compétition.
    * Plus aucun message ne peut être envoyé, mais l'historique reste lisible.
    */

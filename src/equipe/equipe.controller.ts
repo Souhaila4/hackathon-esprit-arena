@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Body,
   Query,
@@ -135,6 +136,30 @@ export class EquipeController {
     @CurrentUser('id') userId: string,
   ) {
     return this.equipeService.inviteToEquipe(equipeId, dto, userId);
+  }
+
+  @Delete('equipes/:equipeId/members/:memberUserId')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.USER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Remove a member from the team (leader only, FORMING or READY status)',
+  })
+  @ApiParam({ name: 'equipeId', description: 'Equipe ID' })
+  @ApiParam({ name: 'memberUserId', description: 'User ID of the member to remove' })
+  @ApiResponse({ status: 200, description: 'Updated equipe' })
+  @ApiResponse({ status: 403, description: 'Not the team leader' })
+  async removeMemberFromEquipe(
+    @Param('equipeId') equipeId: string,
+    @Param('memberUserId') memberUserId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.equipeService.removeMemberFromEquipe(
+      equipeId,
+      memberUserId,
+      userId,
+    );
   }
 
   @Get('equipe-invitations/my-invitations')

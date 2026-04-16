@@ -644,6 +644,105 @@ export class EquipeService {
     return this.getEquipeById(equipeId);
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // REMOVE MEMBER (leader only)
+  // ─────────────────────────────────────────────────────────────────
+
+  async removeMemberFromEquipe(
+    equipeId: string,
+    targetUserId: string,
+    leaderId: string,
+  ) {
+    const equipe = await this.prisma.equipe.findUnique({
+      where: { id: equipeId },
+      include: {
+        members: true,
+        competition: { select: { id: true, status: true } },
+      },
+    });
+
+    if (!equipe) {
+      throw new NotFoundException('Equipe not found');
+    }
+
+    if (equipe.status === EquipeStatus.PARTICIPATING) {
+      throw new BadRequestException(
+        'Cannot remove members while the team is in PARTICIPATING status',
+      );
+    }
+
+    if (
+      equipe.status !== EquipeStatus.FORMING &&
+      equipe.status !== EquipeStatus.READY
+    ) {
+      throw new BadRequestException(
+        'Members can only be removed while the team is FORMING or READY',
+      );
+    }
+
+    const isLeader = equipe.members.some(
+      (m) => m.userId === leaderId && m.role === EquipeMemberRole.LEADER,
+    );
+    if (!isLeader) {
+      throw new ForbiddenException(
+        'Only the team leader can remove a member',
+      );
+    }
+
+    if (targetUserId === leaderId) {
+      throw new BadRequestException(
+        'You cannot remove yourself as leader',
+      );
+    }
+
+    const targetMembership = equipe.members.find(
+      (m) => m.userId === targetUserId,
+    );
+    if (!targetMembership) {
+      throw new NotFoundException('User is not a member of this team');
+    }
+
+    if (targetMembership.role === EquipeMemberRole.LEADER) {
+      throw new BadRequestException('Cannot remove the team leader');
+    }
+
+    const remainingAfter = equipe.members.length - 1;
+    const shouldDemoteReady =
+      equipe.status === EquipeStatus.READY &&
+      remainingAfter < MIN_TEAM_MEMBERS;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.equipeMember.delete({
+        where: { id: targetMembership.id },
+      });
+
+      await tx.competitionParticipant.updateMany({
+        where: {
+          competitionId: equipe.competitionId,
+          userId: targetUserId,
+        },
+        data: { equipeId: null },
+      });
+
+      if (shouldDemoteReady) {
+        await tx.equipe.update({
+          where: { id: equipeId },
+          data: { status: EquipeStatus.FORMING },
+        });
+      }
+    });
+
+    void this.streamService
+      .removeTeamChannelMember(equipeId, equipe.competitionId, targetUserId)
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to remove user from team chat channel (equipe ${equipeId}): ${err?.message ?? err}`,
+        ),
+      );
+
+    return this.getEquipeById(equipeId);
+  }
+
   async getMyInvitations(userId: string) {
     const invitations = await this.prisma.equipeInvitation.findMany({
       where: {
@@ -956,5 +1055,42 @@ export class EquipeService {
     }
 
     return users;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN — suppression équipe complète
+  // ─────────────────────────────────────────────────────────────────
+
+  async adminDeleteEquipe(equipeId: string) {
+    const equipe = await this.prisma.equipe.findUnique({
+      where: { id: equipeId },
+      select: { id: true, competitionId: true, name: true },
+    });
+    if (!equipe) {
+      throw new NotFoundException('Equipe not found');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.competitionParticipant.updateMany({
+        where: { equipeId: equipe.id },
+        data: { equipeId: null },
+      });
+      await tx.equipe.delete({ where: { id: equipe.id } });
+    });
+
+    void this.streamService
+      .archiveTeamChannels(equipe.competitionId, [equipe.id])
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to archive team channel after admin delete ${equipe.id}: ${err?.message ?? err}`,
+        ),
+      );
+
+    return {
+      deleted: true,
+      id: equipe.id,
+      name: equipe.name,
+      competitionId: equipe.competitionId,
+    };
   }
 }

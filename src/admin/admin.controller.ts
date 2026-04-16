@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -24,6 +25,7 @@ import { AdminService } from './admin.service';
 import { ReviewCompanyRequestDto } from './dto/review-company-request.dto';
 import { SendPreselectedEmailDto } from './dto/send-preselected-email.dto';
 import { CompetitionService } from '../competition/competition.service';
+import { EquipeService } from '../equipe/equipe.service';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -33,6 +35,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly competitionService: CompetitionService,
+    private readonly equipeService: EquipeService,
   ) {}
 
   @Patch('users/:id/role')
@@ -79,6 +82,28 @@ export class AdminController {
     @Body() dto: ReviewCompanyRequestDto,
   ) {
     return this.adminService.reviewCompanyRequest(requestId, dto.status);
+  }
+
+  @Get('hackathons/equipes')
+  @ApiOperation({
+    summary:
+      'Liste tous les hackathons avec équipes et membres (emails) — réservé admin',
+  })
+  @ApiResponse({ status: 200, description: 'hackathons avec equipes et membres' })
+  async getAllHackathonEquipes() {
+    return this.adminService.getAllHackathonEquipesAdmin();
+  }
+
+  @Delete('equipes/:equipeId')
+  @ApiOperation({
+    summary:
+      'Supprime une équipe entière (détache les participants, archive le chat) — admin',
+  })
+  @ApiParam({ name: 'equipeId', description: 'ID MongoDB de l’équipe' })
+  @ApiResponse({ status: 200, description: 'Équipe supprimée' })
+  @ApiResponse({ status: 404, description: 'Équipe introuvable' })
+  async deleteEquipe(@Param('equipeId') equipeId: string) {
+    return this.equipeService.adminDeleteEquipe(equipeId);
   }
 
   @Get('dashboard/stats')
