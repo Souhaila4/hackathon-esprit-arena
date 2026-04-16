@@ -90,7 +90,7 @@ export class AntiCheatController {
         ...form.getHeaders(),
         Authorization: `Bearer ${this.hfToken}`,
       },
-      timeout: 30_000,
+      timeout: 90_000,
     });
 
     return response.data;
