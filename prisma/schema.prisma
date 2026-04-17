@@ -294,11 +294,12 @@ model CheckpointSubmission {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
 
   checkpointId    String   @db.ObjectId
-  participantId   String   @db.ObjectId
+  equipeId        String?  @db.ObjectId
+  participantId   String?  @db.ObjectId
 
   checkpoint      CompetitionCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
-
-  participant     CompetitionParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  equipe          Equipe?               @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  participant     CompetitionParticipant? @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
   proofUrl        String?     // repo link, demo, document
   notes           String?
@@ -310,7 +311,8 @@ model CheckpointSubmission {
 
   createdAt       DateTime @default(now())
 
-  @@unique([checkpointId, participantId])
+  @@unique([checkpointId, equipeId])
+  @@index([equipeId])
   @@index([participantId])
 }
 
@@ -411,6 +413,8 @@ model Equipe {
 
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  checkpointSubmissions CheckpointSubmission[]
 
   @@index([competitionId])
   @@index([status])

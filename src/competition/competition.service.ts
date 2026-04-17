@@ -272,25 +272,14 @@ export class CompetitionService {
   }
 
   /**
-   * Creates one CheckpointSubmission per checkpoint for a new participant (all PENDING).
+   * DEPRECATED: Les checkpoints sont maintenant synchronisés par équipe via EquipeService.ensureCheckpointSubmissionsForEquipe.
    */
   private async createCheckpointSubmissionsForParticipant(
     participantId: string,
     competitionId: string,
   ) {
-    const checkpoints = await this.prisma.competitionCheckpoint.findMany({
-      where: { competitionId },
-      select: { id: true },
-      orderBy: { order: 'asc' },
-    });
-
-    await this.prisma.checkpointSubmission.createMany({
-      data: checkpoints.map((cp) => ({
-        checkpointId: cp.id,
-        participantId,
-        status: CheckpointStatus.PENDING,
-      })),
-    });
+    // Ne fait plus rien pour éviter de créer des checkpoints individuels (solo) qui entreraient en conflit.
+    return;
   }
 
   /**
@@ -1340,8 +1329,15 @@ export class CompetitionService {
     if (!participation) {
       throw new NotFoundException('You are not registered in this competition');
     }
+
+    // On cherche les soumissions liées à l'équipe du participant
+    // Si pas d'équipe, on retourne une liste vide (les solos n'ont pas de checkpoints synchronisés)
+    if (!participation.equipeId) {
+      return [];
+    }
+
     return this.prisma.checkpointSubmission.findMany({
-      where: { participantId: participation.id },
+      where: { equipeId: participation.equipeId },
       include: {
         checkpoint: {
           select: {
@@ -1377,11 +1373,17 @@ export class CompetitionService {
       );
     }
 
+    if (!participation.equipeId) {
+      throw new BadRequestException(
+        "Vous devez faire partie d'une équipe pour soumettre des checkpoints.",
+      );
+    }
+
     const submission = await this.prisma.checkpointSubmission.findUnique({
       where: {
-        checkpointId_participantId: {
+        checkpointId_equipeId: {
           checkpointId,
-          participantId: participation.id,
+          equipeId: participation.equipeId,
         },
       },
       include: { checkpoint: true },
@@ -1421,6 +1423,7 @@ export class CompetitionService {
       data: {
         proofUrl: dto.proofUrl ?? undefined,
         notes: dto.notes ?? undefined,
+        participantId: participation.id, // On stocke qui a soumis pour l'équipe
         status: CheckpointStatus.SUBMITTED,
         submittedAt: now,
       },
@@ -1599,29 +1602,40 @@ export class CompetitionService {
           data: { status: CheckpointStatus.MISSED },
         });
 
-        // 2. Count how many checkpoints the user has missed or failed
+        // 2. Count how many checkpoints the team (or solo participant) has missed or failed
         const failedCount = await this.prisma.checkpointSubmission.count({
           where: {
-            participantId: sub.participantId,
+            equipeId: sub.equipeId ?? undefined,
+            participantId: !sub.equipeId ? sub.participantId : undefined,
             status: {
               in: [CheckpointStatus.MISSED, CheckpointStatus.REJECTED],
             },
           },
         });
 
-        // 3. Disqualify ONLY if the user has missed >= 3 checkpoints
+        // 3. Disqualify ALL members of the team if 3 checkpoints missed
         if (failedCount >= 3) {
-          await this.prisma.competitionParticipant.update({
-            where: { id: sub.participantId },
-            data: { status: ParticipantStatus.DISQUALIFIED },
-          });
-          console.log(
-            `✅ [CRON] Checkpoint "${sub.checkpoint.title}" missed. Total failed (${failedCount}) >= 3 → participant ${sub.participantId} DISQUALIFIED`,
-          );
+          if (sub.equipeId) {
+            await this.prisma.competitionParticipant.updateMany({
+              where: { equipeId: sub.equipeId },
+              data: { status: ParticipantStatus.DISQUALIFIED },
+            });
+            console.log(
+              `✅ [CRON] Équipe ${sub.equipeId} DISQUALIFIÉE : ${failedCount} checkpoints manqués/rejetés.`,
+            );
+          } else if (sub.participantId) {
+            await this.prisma.competitionParticipant.update({
+              where: { id: sub.participantId },
+              data: { status: ParticipantStatus.DISQUALIFIED },
+            });
+            console.log(
+              `✅ [CRON] Participant solo ${sub.participantId} DISQUALIFIÉ : ${failedCount} checkpoints manqués/rejetés.`,
+            );
+          }
           this.emitEvent(
             'competition.participant_disqualified_checkpoint_missed',
             {
-              competitionId: sub.participant.competitionId,
+              competitionId: sub.checkpoint.competitionId,
               participantId: sub.participantId,
               checkpointId: sub.checkpointId,
               checkpointTitle: sub.checkpoint.title,

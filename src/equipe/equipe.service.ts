@@ -32,6 +32,39 @@ export class EquipeService {
     private readonly streamService: StreamService,
   ) {}
 
+  /**
+   * Crée des CheckpointSubmissions pour une équipe si elles n'existent pas déjà.
+   * On utilise 'upsert' pour garantir l'indépendance de l'opération.
+   */
+  async ensureCheckpointSubmissionsForEquipe(
+    equipeId: string,
+    competitionId: string,
+    tx?: any,
+  ) {
+    const prisma = tx || this.prisma;
+    const checkpoints = await prisma.competitionCheckpoint.findMany({
+      where: { competitionId },
+      select: { id: true },
+    });
+
+    for (const cp of checkpoints) {
+      await prisma.checkpointSubmission.upsert({
+        where: {
+          checkpointId_equipeId: {
+            checkpointId: cp.id,
+            equipeId,
+          },
+        },
+        create: {
+          checkpointId: cp.id,
+          equipeId,
+          status: CheckpointStatus.PENDING,
+        },
+        update: {},
+      });
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────
   // CREATE EQUIPE
   // ─────────────────────────────────────────────────────────────────
@@ -110,21 +143,12 @@ export class EquipeService {
         },
       });
 
-      // Create checkpoint submissions for the participant
-      const checkpoints = await tx.competitionCheckpoint.findMany({
-        where: { competitionId: dto.competitionId },
-        select: { id: true },
-        orderBy: { order: 'asc' },
-      });
-      if (checkpoints.length > 0) {
-        await tx.checkpointSubmission.createMany({
-          data: checkpoints.map((cp) => ({
-            checkpointId: cp.id,
-            participantId: participant.id,
-            status: CheckpointStatus.PENDING,
-          })),
-        });
-      }
+      // Create checkpoint submissions for the TEAM (synchronisée)
+      await this.ensureCheckpointSubmissionsForEquipe(
+        newEquipe.id,
+        dto.competitionId,
+        tx,
+      );
 
       await tx.user.update({
         where: { id: userId },
@@ -504,21 +528,12 @@ export class EquipeService {
         },
       });
 
-      // Create checkpoint submissions
-      const checkpoints = await tx.competitionCheckpoint.findMany({
-        where: { competitionId: equipe.competitionId },
-        select: { id: true },
-        orderBy: { order: 'asc' },
-      });
-      if (checkpoints.length > 0) {
-        await tx.checkpointSubmission.createMany({
-          data: checkpoints.map((cp) => ({
-            checkpointId: cp.id,
-            participantId: participant.id,
-            status: CheckpointStatus.PENDING,
-          })),
-        });
-      }
+      // Ensure team checkpoint submissions exist
+      await this.ensureCheckpointSubmissionsForEquipe(
+        equipe.id,
+        equipe.competitionId,
+        tx,
+      );
 
       await tx.user.update({
         where: { id: userId },
@@ -851,21 +866,6 @@ export class EquipeService {
         },
       });
 
-      const checkpoints = await tx.competitionCheckpoint.findMany({
-        where: { competitionId },
-        select: { id: true },
-        orderBy: { order: 'asc' },
-      });
-      if (checkpoints.length > 0) {
-        await tx.checkpointSubmission.createMany({
-          data: checkpoints.map((cp) => ({
-            checkpointId: cp.id,
-            participantId: p.id,
-            status: CheckpointStatus.PENDING,
-          })),
-        });
-      }
-
       await tx.user.update({
         where: { id: userId },
         data: { totalChallenges: { increment: 1 } },
@@ -958,6 +958,13 @@ export class EquipeService {
             data: { equipeId: newEquipe.id },
           });
         }
+
+        // Ensure team checkpoint submissions exist
+        await this.ensureCheckpointSubmissionsForEquipe(
+          newEquipe.id,
+          competitionId,
+          tx,
+        );
 
         return newEquipe;
       });
