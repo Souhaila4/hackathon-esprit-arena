@@ -176,6 +176,19 @@ export class EquipeService {
 
     try {
       const equipe = await this.prisma.$transaction(async (tx) => {
+        // Garde anti-course : un seul membership par (user, hackathon) au niveau DB (voir schema).
+        const alreadyMember = await tx.equipeMember.findFirst({
+          where: {
+            userId,
+            equipe: { competitionId: dto.competitionId },
+          },
+        });
+        if (alreadyMember) {
+          throw new ConflictException(
+            'You are already in a team for this competition',
+          );
+        }
+
         const newEquipe = await tx.equipe.create({
           data: {
             name: dto.name,
@@ -192,26 +205,26 @@ export class EquipeService {
           },
         });
 
-        if (existingParticipation) {
-          await tx.competitionParticipant.update({
-            where: { id: existingParticipation.id },
-            data: {
-              equipeId: newEquipe.id,
-              status: ParticipantStatus.JOINED,
-              ...(faceImage?.buffer?.length ? { hackathonFaceUrl } : {}),
-            },
-          });
-        } else {
-          await tx.competitionParticipant.create({
-            data: {
+        await tx.competitionParticipant.upsert({
+          where: {
+            competitionId_userId: {
               competitionId: dto.competitionId,
               userId,
-              equipeId: newEquipe.id,
-              status: ParticipantStatus.JOINED,
-              hackathonFaceUrl,
             },
-          });
-        }
+          },
+          create: {
+            competitionId: dto.competitionId,
+            userId,
+            equipeId: newEquipe.id,
+            status: ParticipantStatus.JOINED,
+            hackathonFaceUrl,
+          },
+          update: {
+            equipeId: newEquipe.id,
+            status: ParticipantStatus.JOINED,
+            ...(faceImage?.buffer?.length ? { hackathonFaceUrl } : {}),
+          },
+        });
 
         await this.ensureCheckpointSubmissionsForEquipe(
           newEquipe.id,
@@ -246,6 +259,13 @@ export class EquipeService {
         this.logger.error(
           `Prisma ${error.code} — meta: ${JSON.stringify(error.meta)}`,
         );
+        // P2002 = violation d'unicité (ex. double clic, 2 requêtes parallèles, ou ligne participant déjà existante).
+        // Sans mapping, Nest renvoie 500. Voir analyse dans les notes de déploiement / équipe.
+        if (error.code === 'P2002') {
+          throw new ConflictException(
+            'Contrainte unique : vous êtes peut-être déjà inscrit à ce hackathon, ou la requête a été doublonnée. Actualisez et réessayez.',
+          );
+        }
       }
       throw error;
     }
