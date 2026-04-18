@@ -6,6 +6,8 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import * as path from 'path';
+import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { StreamService } from '../stream/stream.service';
 import {
@@ -23,6 +25,24 @@ import { CreateEquipeDto, InviteToEquipeDto } from './equipe.dto';
 const MIN_TEAM_MEMBERS = 4;
 const MAX_TEAM_MEMBERS = 6;
 
+/** Même logique que joinCompetition : image anti-triche stockée sous /uploads/hackathon-faces/ */
+function saveHackathonFaceImage(
+  userId: string,
+  competitionId: string,
+  faceImage: Express.Multer.File,
+): string {
+  const uploadDir = path.join(process.cwd(), 'uploads', 'hackathon-faces');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  const ext = path.extname(faceImage.originalname || '') || '.jpg';
+  const filename = `face-${userId}-${competitionId}-${uniqueSuffix}${ext}`;
+  const filePath = path.join(uploadDir, filename);
+  fs.writeFileSync(filePath, faceImage.buffer);
+  return `/uploads/hackathon-faces/${filename}`;
+}
+
 @Injectable()
 export class EquipeService {
   private readonly logger = new Logger(EquipeService.name);
@@ -36,7 +56,11 @@ export class EquipeService {
   // CREATE EQUIPE
   // ─────────────────────────────────────────────────────────────────
 
-  async createEquipe(dto: CreateEquipeDto, userId: string) {
+  async createEquipe(
+    dto: CreateEquipeDto,
+    userId: string,
+    faceImage?: Express.Multer.File,
+  ) {
     const competition = await this.prisma.competition.findUnique({
       where: { id: dto.competitionId },
     });
@@ -81,6 +105,24 @@ export class EquipeService {
       );
     }
 
+    let hackathonFaceUrl = '/uploads/hackathon-faces/default.png';
+    if (faceImage?.buffer?.length) {
+      try {
+        hackathonFaceUrl = saveHackathonFaceImage(
+          userId,
+          dto.competitionId,
+          faceImage,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to save hackathon face image for equipe creation: ${err}`,
+        );
+        throw new BadRequestException(
+          'Could not save face image. Check server disk permissions or image format.',
+        );
+      }
+    }
+
     // Create equipe + leader membership + competition participant in a transaction
     const equipe = await this.prisma.$transaction(async (tx) => {
       const newEquipe = await tx.equipe.create({
@@ -106,7 +148,7 @@ export class EquipeService {
           userId,
           equipeId: newEquipe.id,
           status: ParticipantStatus.JOINED,
-          hackathonFaceUrl: '/uploads/hackathon-faces/default.png',
+          hackathonFaceUrl,
         },
       });
 
