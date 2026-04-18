@@ -140,6 +140,7 @@ export class EquipeService {
       );
     }
 
+    // Limite = nombre de PERSONNES inscrites au hackathon, pas le nombre d'équipes.
     if (competition.maxParticipants !== null) {
       const currentCount = await this.prisma.competitionParticipant.count({
         where: {
@@ -149,7 +150,8 @@ export class EquipeService {
       });
       if (!existingParticipation && currentCount >= competition.maxParticipants) {
         throw new BadRequestException(
-          'This competition has reached its maximum participant limit',
+          `Participant limit reached for this hackathon (${currentCount}/${competition.maxParticipants} people). ` +
+            'This is a cap on registered users, not on teams. Raise maxParticipants or leave it empty for unlimited.',
         );
       }
     }
