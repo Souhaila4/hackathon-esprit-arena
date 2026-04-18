@@ -98,7 +98,7 @@ export class EquipeService {
       );
     }
 
-    // Check user is not already a solo participant (we will update it instead of failing if it exists)
+    // Check user is not already a solo participant
     const existingParticipation =
       await this.prisma.competitionParticipant.findUnique({
         where: {
@@ -108,83 +108,66 @@ export class EquipeService {
           },
         },
       });
-    
-    // If they are in a team already, we MUST fail (already checked above via existingMembership, but safe to keep logic consistent)
-    if (existingParticipation && existingParticipation.equipeId) {
+    if (existingParticipation) {
       throw new ConflictException(
-        'You are already in a team for this competition.',
+        'You are already registered in this competition. Leave solo queue first.',
       );
     }
 
-    try {
-      // Create equipe + leader membership + competition participant in a transaction
-      const equipe = await this.prisma.$transaction(async (tx) => {
-        const newEquipe = await tx.equipe.create({
-          data: {
-            name: dto.name,
-            competitionId: dto.competitionId,
-            status: EquipeStatus.FORMING,
-          },
-        });
-
-        await tx.equipeMember.create({
-          data: {
-            equipeId: newEquipe.id,
-            userId,
-            role: EquipeMemberRole.LEADER,
-          },
-        });
-
-        // Create or Update competition participant for the leader
-        if (existingParticipation) {
-          await tx.competitionParticipant.update({
-            where: { id: existingParticipation.id },
-            data: {
-              equipeId: newEquipe.id,
-              status: ParticipantStatus.JOINED, // Ensure status is JOINED (not SUBMITTED or DISQUALIFIED if relevant)
-            },
-          });
-        } else {
-          await tx.competitionParticipant.create({
-            data: {
-              competitionId: dto.competitionId,
-              userId,
-              equipeId: newEquipe.id,
-              status: ParticipantStatus.JOINED,
-              hackathonFaceUrl: '/uploads/hackathon-faces/default.png',
-            },
-          });
-        }
-
-        // Create checkpoint submissions for the TEAM (synchronisée)
-        await this.ensureCheckpointSubmissionsForEquipe(
-          newEquipe.id,
-          dto.competitionId,
-          tx,
-        );
-
-        await tx.user.update({
-          where: { id: userId },
-          data: { totalChallenges: { increment: 1 } },
-        });
-
-        return newEquipe;
+    // Create equipe + leader membership + competition participant in a transaction
+    const equipe = await this.prisma.$transaction(async (tx) => {
+      const newEquipe = await tx.equipe.create({
+        data: {
+          name: dto.name,
+          competitionId: dto.competitionId,
+          status: EquipeStatus.FORMING,
+        },
       });
 
-      // Créer le canal de chat privé pour l'équipe (Non-bloquant)
-      void this.streamService
-        .createTeamChannel(equipe.id, dto.competitionId, dto.name, [userId])
-        .catch((err) =>
-          this.logger.warn(
-            `Failed to create team chat channel for equipe ${equipe.id}: ${err?.message ?? err}`,
-          ),
-        );
+      await tx.equipeMember.create({
+        data: {
+          equipeId: newEquipe.id,
+          userId,
+          role: EquipeMemberRole.LEADER,
+        },
+      });
 
-      return this.getEquipeById(equipe.id);
-    } catch (error) {
-      this.logger.error(`Error in createEquipe for user ${userId}: ${error.message}`, error.stack);
-      throw error;
-    }
+      // Create competition participant for the leader
+      const participant = await tx.competitionParticipant.create({
+        data: {
+          competitionId: dto.competitionId,
+          userId,
+          equipeId: newEquipe.id,
+          status: ParticipantStatus.JOINED,
+          hackathonFaceUrl: '/uploads/hackathon-faces/default.png',
+        },
+      });
+
+      // Create checkpoint submissions for the TEAM (synchronisée)
+      await this.ensureCheckpointSubmissionsForEquipe(
+        newEquipe.id,
+        dto.competitionId,
+        tx,
+      );
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { totalChallenges: { increment: 1 } },
+      });
+
+      return newEquipe;
+    });
+
+    // Créer le canal de chat privé pour l'équipe
+    void this.streamService
+      .createTeamChannel(equipe.id, dto.competitionId, dto.name, [userId])
+      .catch((err) =>
+        this.logger.warn(
+          `Failed to create team chat channel for equipe ${equipe.id}: ${err?.message ?? err}`,
+        ),
+      );
+
+    return this.getEquipeById(equipe.id);
   }
 
   // ─────────────────────────────────────────────────────────────────
