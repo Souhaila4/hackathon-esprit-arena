@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
@@ -54,7 +55,8 @@ export class EquipeService {
 
   /**
    * Crée des CheckpointSubmissions pour une équipe si elles n'existent pas déjà.
-   * On utilise 'upsert' pour garantir l'indépendance de l'opération.
+   * create + ignore P2002 : sur MongoDB, upsert sur clé composée peut échouer pour
+   * plusieurs équipes créées successivement.
    */
   async ensureCheckpointSubmissionsForEquipe(
     equipeId: string,
@@ -68,20 +70,20 @@ export class EquipeService {
     });
 
     for (const cp of checkpoints) {
-      await prisma.checkpointSubmission.upsert({
-        where: {
-          checkpointId_equipeId: {
+      try {
+        await prisma.checkpointSubmission.create({
+          data: {
             checkpointId: cp.id,
             equipeId,
+            status: CheckpointStatus.PENDING,
           },
-        },
-        create: {
-          checkpointId: cp.id,
-          equipeId,
-          status: CheckpointStatus.PENDING,
-        },
-        update: {},
-      });
+        });
+      } catch (e) {
+        if (e instanceof PrismaClientKnownRequestError && e.code === 'P2002') {
+          continue;
+        }
+        throw e;
+      }
     }
   }
 
@@ -122,7 +124,6 @@ export class EquipeService {
       );
     }
 
-    // Check user is not already a solo participant
     const existingParticipation =
       await this.prisma.competitionParticipant.findUnique({
         where: {
@@ -132,10 +133,25 @@ export class EquipeService {
           },
         },
       });
-    if (existingParticipation) {
+
+    if (existingParticipation?.equipeId) {
       throw new ConflictException(
-        'You are already registered in this competition. Leave solo queue first.',
+        'You are already in a team for this competition.',
       );
+    }
+
+    if (competition.maxParticipants !== null) {
+      const currentCount = await this.prisma.competitionParticipant.count({
+        where: {
+          competitionId: dto.competitionId,
+          status: ParticipantStatus.JOINED,
+        },
+      });
+      if (!existingParticipation && currentCount >= competition.maxParticipants) {
+        throw new BadRequestException(
+          'This competition has reached its maximum participant limit',
+        );
+      }
     }
 
     let hackathonFaceUrl = '/uploads/hackathon-faces/default.png';
@@ -156,60 +172,81 @@ export class EquipeService {
       }
     }
 
-    // Create equipe + leader membership + competition participant in a transaction
-    const equipe = await this.prisma.$transaction(async (tx) => {
-      const newEquipe = await tx.equipe.create({
-        data: {
-          name: dto.name,
-          competitionId: dto.competitionId,
-          status: EquipeStatus.FORMING,
-        },
+    try {
+      const equipe = await this.prisma.$transaction(async (tx) => {
+        const newEquipe = await tx.equipe.create({
+          data: {
+            name: dto.name,
+            competitionId: dto.competitionId,
+            status: EquipeStatus.FORMING,
+          },
+        });
+
+        await tx.equipeMember.create({
+          data: {
+            equipeId: newEquipe.id,
+            userId,
+            role: EquipeMemberRole.LEADER,
+          },
+        });
+
+        if (existingParticipation) {
+          await tx.competitionParticipant.update({
+            where: { id: existingParticipation.id },
+            data: {
+              equipeId: newEquipe.id,
+              status: ParticipantStatus.JOINED,
+              ...(faceImage?.buffer?.length ? { hackathonFaceUrl } : {}),
+            },
+          });
+        } else {
+          await tx.competitionParticipant.create({
+            data: {
+              competitionId: dto.competitionId,
+              userId,
+              equipeId: newEquipe.id,
+              status: ParticipantStatus.JOINED,
+              hackathonFaceUrl,
+            },
+          });
+        }
+
+        await this.ensureCheckpointSubmissionsForEquipe(
+          newEquipe.id,
+          dto.competitionId,
+          tx,
+        );
+
+        if (!existingParticipation) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { totalChallenges: { increment: 1 } },
+          });
+        }
+
+        return newEquipe;
       });
 
-      await tx.equipeMember.create({
-        data: {
-          equipeId: newEquipe.id,
-          userId,
-          role: EquipeMemberRole.LEADER,
-        },
-      });
+      void this.streamService
+        .createTeamChannel(equipe.id, dto.competitionId, dto.name, [userId])
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to create team chat channel for equipe ${equipe.id}: ${err?.message ?? err}`,
+          ),
+        );
 
-      // Create competition participant for the leader
-      const participant = await tx.competitionParticipant.create({
-        data: {
-          competitionId: dto.competitionId,
-          userId,
-          equipeId: newEquipe.id,
-          status: ParticipantStatus.JOINED,
-          hackathonFaceUrl,
-        },
-      });
-
-      // Create checkpoint submissions for the TEAM (synchronisée)
-      await this.ensureCheckpointSubmissionsForEquipe(
-        newEquipe.id,
-        dto.competitionId,
-        tx,
-      );
-
-      await tx.user.update({
-        where: { id: userId },
-        data: { totalChallenges: { increment: 1 } },
-      });
-
-      return newEquipe;
-    });
-
-    // Créer le canal de chat privé pour l'équipe
-    void this.streamService
-      .createTeamChannel(equipe.id, dto.competitionId, dto.name, [userId])
-      .catch((err) =>
-        this.logger.warn(
-          `Failed to create team chat channel for equipe ${equipe.id}: ${err?.message ?? err}`,
-        ),
-      );
-
-    return this.getEquipeById(equipe.id);
+      return this.getEquipeById(equipe.id);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Error in createEquipe for user ${userId}: ${msg}`, stack);
+      if (error instanceof PrismaClientKnownRequestError) {
+        this.logger.error(
+          `Prisma ${error.code} — meta: ${JSON.stringify(error.meta)}`,
+        );
+      }
+      throw error;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -526,7 +563,6 @@ export class EquipeService {
       );
     }
 
-    // Check not already a solo participant
     const existingParticipation =
       await this.prisma.competitionParticipant.findUnique({
         where: {
@@ -536,11 +572,13 @@ export class EquipeService {
           },
         },
       });
-    if (existingParticipation && !existingParticipation.equipeId) {
+    if (existingParticipation?.equipeId) {
       throw new ConflictException(
-        'You are in the solo waiting pool. Leave it before accepting a team invite.',
+        'You are already registered in this competition with a team.',
       );
     }
+
+    const hadPriorParticipation = !!existingParticipation;
 
     // Accept in a transaction
     await this.prisma.$transaction(async (tx) => {
@@ -559,14 +597,23 @@ export class EquipeService {
         },
       });
 
-      // Create competition participant
-      const participant = await tx.competitionParticipant.create({
-        data: {
+      await tx.competitionParticipant.upsert({
+        where: {
+          competitionId_userId: {
+            competitionId: equipe.competitionId,
+            userId,
+          },
+        },
+        create: {
           competitionId: equipe.competitionId,
           userId,
           equipeId: equipe.id,
           status: ParticipantStatus.JOINED,
           hackathonFaceUrl: '/uploads/hackathon-faces/default.png',
+        },
+        update: {
+          equipeId: equipe.id,
+          status: ParticipantStatus.JOINED,
         },
       });
 
@@ -577,10 +624,12 @@ export class EquipeService {
         tx,
       );
 
-      await tx.user.update({
-        where: { id: userId },
-        data: { totalChallenges: { increment: 1 } },
-      });
+      if (!hadPriorParticipation) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { totalChallenges: { increment: 1 } },
+        });
+      }
 
       // At max size: expire pending invites (status READY is set only by leader via markGroupReady)
       const newMemberCount = equipe.members.length + 1;
