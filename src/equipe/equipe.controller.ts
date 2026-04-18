@@ -1,15 +1,19 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Param,
+  BadRequestException,
   Body,
-  Query,
-  UseGuards,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Post,
+  Query,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +22,7 @@ import {
   ApiParam,
   ApiBody,
   ApiQuery,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { EquipeService } from './equipe.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -26,6 +31,68 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 import { CreateEquipeDto, InviteToEquipeDto } from './equipe.dto';
+
+/** Premier fichier image trouvé (noms de champs tolérés — apps mobile / Flutter). */
+function pickTeamFaceFile(
+  files: Record<string, Express.Multer.File[]> | undefined,
+): Express.Multer.File | undefined {
+  if (!files) return undefined;
+  for (const key of [
+    'hackathonFaceImage',
+    'photo',
+    'image',
+    'faceImage',
+    'file',
+  ]) {
+    const f = files[key]?.[0];
+    if (f?.buffer?.length) return f;
+  }
+  return undefined;
+}
+
+/** Intercepteur multipart partagé (deux chemins explicites : évite les soucis de @Post([...]) selon versions). */
+const EQUIPE_CREATE_MULTIPART = FileFieldsInterceptor(
+  [
+    { name: 'hackathonFaceImage', maxCount: 1 },
+    { name: 'photo', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'faceImage', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ],
+  {
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ok =
+        !!file.mimetype?.startsWith('image/') ||
+        /\.(jpg|jpeg|png|gif|webp)$/i.test(file.originalname || '');
+      if (!ok) {
+        return cb(
+          new BadRequestException(
+            'La photo doit être une image (JPEG, PNG, GIF ou WebP).',
+          ),
+          false,
+        );
+      }
+      cb(null, true);
+    },
+  },
+);
+
+const EQUIPE_MULTIPART_API_BODY = {
+  schema: {
+    type: 'object' as const,
+    required: ['name', 'competitionId'],
+    properties: {
+      name: { type: 'string', example: 'Les Hackers' },
+      competitionId: { type: 'string' },
+      hackathonFaceImage: { type: 'string', format: 'binary' },
+      photo: { type: 'string', format: 'binary' },
+      image: { type: 'string', format: 'binary' },
+      faceImage: { type: 'string', format: 'binary' },
+      file: { type: 'string', format: 'binary' },
+    },
+  },
+};
 
 @ApiTags('Equipes')
 @ApiBearerAuth('access-token')
@@ -38,11 +105,15 @@ export class EquipeController {
   // EQUIPE CRUD
   // ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Création JSON (web). Pour multipart + photo (Flutter / mobile), utiliser
+   * `POST /equipes/with-photo` ou `POST /team/create`.
+   */
   @Post('equipes')
   @UseGuards(RolesGuard)
   @Roles(UserRole.USER)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new equipe for a competition' })
+  @ApiOperation({ summary: 'Create a new equipe for a competition (JSON body)' })
   @ApiBody({ type: CreateEquipeDto })
   @ApiResponse({ status: 201, description: 'Equipe created successfully' })
   @ApiResponse({ status: 409, description: 'Already in a team' })
@@ -51,6 +122,66 @@ export class EquipeController {
     @CurrentUser('id') userId: string,
   ) {
     return this.equipeService.createEquipe(dto, userId);
+  }
+
+  /**
+   * Multipart : `name`, `competitionId` + une image (champ au choix parmi
+   * hackathonFaceImage, photo, image, faceImage, file). Max 10 Mo par fichier.
+   */
+  @Post('equipes/with-photo')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.USER)
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(EQUIPE_CREATE_MULTIPART)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Créer une équipe avec photo anti-triche (multipart — mobile / Flutter)',
+  })
+  @ApiBody(EQUIPE_MULTIPART_API_BODY)
+  @ApiResponse({ status: 201, description: 'Equipe created successfully' })
+  @ApiResponse({ status: 409, description: 'Already in a team' })
+  async createEquipeWithPhotoPath(
+    @Body() dto: CreateEquipeDto,
+    @UploadedFiles()
+    files: Record<string, Express.Multer.File[]> | undefined,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.createEquipeWithPhotoMultipart(dto, files, userId);
+  }
+
+  /** Alias explicite pour les clients qui appellent `POST /team/create`. */
+  @Post('team/create')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.USER)
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(EQUIPE_CREATE_MULTIPART)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Alias de POST /equipes/with-photo — créer une équipe avec photo',
+  })
+  @ApiBody(EQUIPE_MULTIPART_API_BODY)
+  @ApiResponse({ status: 201, description: 'Equipe created successfully' })
+  @ApiResponse({ status: 409, description: 'Already in a team' })
+  async createTeamCreatePath(
+    @Body() dto: CreateEquipeDto,
+    @UploadedFiles()
+    files: Record<string, Express.Multer.File[]> | undefined,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.createEquipeWithPhotoMultipart(dto, files, userId);
+  }
+
+  private createEquipeWithPhotoMultipart(
+    dto: CreateEquipeDto,
+    files: Record<string, Express.Multer.File[]> | undefined,
+    userId: string,
+  ) {
+    return this.equipeService.createEquipe(
+      dto,
+      userId,
+      pickTeamFaceFile(files),
+    );
   }
 
   @Get('equipes/my-equipe/:competitionId')
